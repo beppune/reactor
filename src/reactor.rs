@@ -14,16 +14,20 @@ impl Reactor {
     {
         let mut scope = Scope::new();
         f(&mut scope);
+
+        for s in &mut scope.handler {
+            s();
+        }
     }
 }
 
 struct Scope<'scoped> {
-    handler: OnceCell<Box<dyn FnMut(&mut Scope) + 'scoped>>
+    handler: Vec<Box<dyn FnMut() + 'scoped>>
 }
 
 impl<'scoped> Scope<'scoped> {
     fn new() -> Scope<'scoped> {
-        Scope { handler: OnceCell::new() }
+        Scope { handler: vec![] }
     }
 }
 
@@ -36,7 +40,9 @@ mod test {
         let mut reactor = Reactor::new();
 
         reactor.run(|scope|{
-            println!("Hello!");
+            scope.handler.push(Box::new(
+                    ||{println!("Hello")}
+            ));
         });
 
         assert!(true)

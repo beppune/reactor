@@ -1,3 +1,5 @@
+use std::cell::OnceCell;
+
 
 struct Reactor {
 }
@@ -8,9 +10,20 @@ impl Reactor {
     }
 
     fn run<'scoped,F>(&mut self, mut f:F)
-        where F: FnMut() + 'scoped
+        where F: FnMut(&mut Scope) + 'scoped
     {
-        f();
+        let mut scope = Scope::new();
+        f(&mut scope);
+    }
+}
+
+struct Scope<'scoped> {
+    handler: OnceCell<Box<dyn FnMut(&mut Scope) + 'scoped>>
+}
+
+impl<'scoped> Scope<'scoped> {
+    fn new() -> Scope<'scoped> {
+        Scope { handler: OnceCell::new() }
     }
 }
 
@@ -22,7 +35,7 @@ mod test {
     fn test() {
         let mut reactor = Reactor::new();
 
-        reactor.run(||{
+        reactor.run(|scope|{
             println!("Hello!");
         });
 

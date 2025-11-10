@@ -9,11 +9,11 @@ impl Reactor {
         Self {}
     }
 
-    fn run<'scoped,F>(&mut self, mut f:F)
+    fn run<'scoped,F>(&mut self, setup:F)
         where F: FnOnce(&mut Scope) + 'scoped
     {
         let mut scope = Scope::new();
-        f(&mut scope);
+        setup(&mut scope);
 
         for s in &mut scope.handler {
             s();
@@ -35,6 +35,11 @@ impl<'scoped> Scope<'scoped> {
     {
         self.handler.push( Box::new( f ) );
     }
+
+    fn accept<F>(&mut self, address:&str, f:F)
+        where F: FnMut(u32) + 'scoped
+    {
+    }
 }
 
 #[cfg(test)]
@@ -55,6 +60,9 @@ mod test {
                 let mut ss = rs.borrow_mut();
                 ss.push_str(" goodbye");
             } );
+
+            scope.accept( "localhost:3113", |stream| {
+            });
         });
 
         println!("{}", s.borrow());

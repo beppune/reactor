@@ -1,4 +1,4 @@
-use std::{cell::OnceCell, net::{TcpListener, TcpStream}};
+use std::{cell::OnceCell, collections::VecDeque, net::{TcpListener, TcpStream}, rc::Rc, sync::RwLock};
 use std::io::Result;
 
 use slab::Slab;
@@ -28,9 +28,14 @@ enum Resource {
     Listener(TcpListener),
 }
 
+enum Dispatch {
+    Accept(usize)
+}
+
 struct Scope<'scoped> {
     handler: Vec<Box<dyn FnMut() + 'scoped>>,
     resources: Slab<Resource>,
+    queue: Rc<Rwlock<VecDeque<Dispatch>>>,
 }
 
 impl<'scoped> Scope<'scoped> {
@@ -38,6 +43,7 @@ impl<'scoped> Scope<'scoped> {
         Scope {
             handler: vec![],
             resources: Slab::new(),
+            queue: Rc::new(RwLock::new(VecDeque::new())),
         }
     }
 
@@ -54,7 +60,7 @@ impl<'scoped> Scope<'scoped> {
         listener.set_nonblocking(true)?;
         let res = self.resources.insert(Resource::Listener(listener));
 
-
+        
 
         Ok(res)
     }

@@ -29,7 +29,7 @@ enum Resource {
 }
 
 enum Dispatch {
-    Accept(usize)
+    Accept(usize),
 }
 
 struct Scope<'scoped> {
@@ -37,7 +37,7 @@ struct Scope<'scoped> {
     resources: Rc<RwLock<Slab<Resource>>>,
     queue: Rc<RwLock<VecDeque<Dispatch>>>,
 }
-    
+
 type Resources = Rc<RwLock<Slab<Resource>>>;
 type Queue = Rc<RwLock<VecDeque<Dispatch>>>;
 
@@ -57,7 +57,7 @@ impl<'scoped> Scope<'scoped> {
     }
 
     fn accept<F>(&mut self, address:&str, mut complete:F) -> Result<usize>
-        where F: FnMut(Rc<RwLock<Slab<Resource>>>, usize) -> Option<Dispatch> + 'scoped
+        where F: FnMut(Resources, usize) -> Option<Dispatch> + 'scoped
     {
         let listener = TcpListener::bind(address)?;
         listener.set_nonblocking(true)?;
@@ -93,8 +93,23 @@ mod test {
                 ss.push_str(" goodbye");
             } );
 
-            scope.accept( "localhost:3113", |stream| {
-            });
+            scope.accept( "localhost:3113", |tokens, token| {
+                let res_listener = tokens.write().unwrap().remove(token);
+                match res_listener {
+                    Resource::Listener(listener) => {
+                        match listener.accept() {
+                            Ok((stream, addr)) => {
+                                
+                            },
+                            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => todo!(),
+                            Err(_) => todo!(),
+                        }
+                    }
+                    _ => (),
+                }
+
+                None
+            }).unwrap();
         });
 
         println!("{}", s.borrow());

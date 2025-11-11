@@ -1,4 +1,7 @@
-use std::cell::OnceCell;
+use std::{cell::OnceCell, net::{TcpListener, TcpStream}};
+use std::io::Result;
+
+use slab::Slab;
 
 
 struct Reactor {
@@ -21,13 +24,21 @@ impl Reactor {
     }
 }
 
+enum Resource {
+    Listener(TcpListener),
+}
+
 struct Scope<'scoped> {
-    handler: Vec<Box<dyn FnMut() + 'scoped>>
+    handler: Vec<Box<dyn FnMut() + 'scoped>>,
+    resources: Slab<Resource>,
 }
 
 impl<'scoped> Scope<'scoped> {
     fn new() -> Scope<'scoped> {
-        Scope { handler: vec![] }
+        Scope {
+            handler: vec![],
+            resources: Slab::new(),
+        }
     }
 
     fn add<F>(&mut self, f:F)
@@ -36,9 +47,16 @@ impl<'scoped> Scope<'scoped> {
         self.handler.push( Box::new( f ) );
     }
 
-    fn accept<F>(&mut self, address:&str, f:F)
+    fn accept<F>(&mut self, address:&str, f:F) -> Result<usize>
         where F: FnMut(u32) + 'scoped
     {
+        let listener = TcpListener::bind(address)?;
+        listener.set_nonblocking(true)?;
+        let res = self.resources.insert(Resource::Listener(listener));
+
+
+
+        Ok(res)
     }
 }
 

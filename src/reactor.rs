@@ -34,15 +34,18 @@ enum Dispatch {
 
 struct Scope<'scoped> {
     handler: Vec<Box<dyn FnMut() + 'scoped>>,
-    resources: Slab<Resource>,
-    queue: Rc<Rwlock<VecDeque<Dispatch>>>,
+    resources: Rc<RwLock<Slab<Resource>>>,
+    queue: Rc<RwLock<VecDeque<Dispatch>>>,
 }
+    
+type Resources = Rc<RwLock<Slab<Resource>>>;
+type Queue = Rc<RwLock<VecDeque<Dispatch>>>;
 
 impl<'scoped> Scope<'scoped> {
     fn new() -> Scope<'scoped> {
         Scope {
             handler: vec![],
-            resources: Slab::new(),
+            resources: Rc::new(RwLock::new(Slab::new())),
             queue: Rc::new(RwLock::new(VecDeque::new())),
         }
     }
@@ -53,14 +56,19 @@ impl<'scoped> Scope<'scoped> {
         self.handler.push( Box::new( f ) );
     }
 
-    fn accept<F>(&mut self, address:&str, f:F) -> Result<usize>
-        where F: FnMut(u32) + 'scoped
+    fn accept<F>(&mut self, address:&str, mut complete:F) -> Result<usize>
+        where F: FnMut(Rc<RwLock<Slab<Resource>>>, usize) -> Option<Dispatch> + 'scoped
     {
         let listener = TcpListener::bind(address)?;
         listener.set_nonblocking(true)?;
-        let res = self.resources.insert(Resource::Listener(listener));
+        let res = self.resources.clone().write()
+            .unwrap().insert(Resource::Listener(listener));
 
-        
+        let opt_dispatch = complete(self.resources.clone(), res);
+
+        if let Some(dispatch) = opt_dispatch {
+            self.queue.clone().write().unwrap().push_back( dispatch );
+        }
 
         Ok(res)
     }

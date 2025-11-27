@@ -1,0 +1,25 @@
+use std::net::TcpListener;
+
+pub enum Nothing {}
+
+pub enum Event<E=Nothing> {
+    Accept(TcpListener),
+    User(E),
+}
+
+struct Scope<'run, E=Nothing> {
+    handlers: Rc<RefCell<Slab<Event<E>>>>,
+}
+
+impl<'run> Scope<'run> {
+
+}
+
+struct Reactor {}
+
+impl Reactor {
+
+    fn setup<'run>() {
+    }
+}
+

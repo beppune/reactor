@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::VecDeque, io::Error, net::{TcpListener, TcpStream}, rc::Rc};
+use std::{cell::RefCell, collections::VecDeque, io::{Error, ErrorKind}, net::{TcpListener, TcpStream}, rc::Rc};
 
 use slab::Slab;
 
@@ -8,6 +8,9 @@ pub enum Nothing {}
 
 pub enum Event {
     Accept(usize),
+    // Write(usize),
+    // Read(usize),
+    Stop,
 }
 
 pub struct Token(usize);
@@ -19,7 +22,7 @@ enum Resource {
 
 pub struct Scope<'scope>{
     handler: Vec<(Token,Box<dyn Fn(Token, Option<Error>) -> Option<Event> + 'scope>)>,
-    resources: Slab<Resource>,
+    resources: Rc<RefCell<Slab<Resource>>>,
     queue: VecDeque<Event>,
 }
 
@@ -28,7 +31,7 @@ impl<'scope> Scope<'scope> {
     fn new() -> Self {
         Self {
             handler: vec![],
-            resources: Slab::new(),
+            resources: Rc::new(RefCell::new(Slab::new())),
             queue: VecDeque::new(),
         }
     }
@@ -38,10 +41,13 @@ impl<'scope> Scope<'scope> {
     {
 
         let listener = TcpListener::bind(addr)?;
-        
-        let index = self.resources.insert(Resource::Listener(listener));
-        self.handler.push( (Token(index), Box::new(handler)) );
 
+        listener.set_nonblocking(true)?;
+        
+        let index = self.resources.borrow_mut().insert(Resource::Listener(listener));
+
+        self.queue.push_back( Event::Accept(index) );
+        self.handler.push( (Token(index), Box::new(handler)) );
 
         Ok(())
     }
@@ -54,6 +60,50 @@ impl Reactor {
         Self {}
     }
 
+    fn poll(&mut self, scope: &mut Scope) -> bool {
+        for res in scope.resources.borrow_mut().iter_mut() {
+            match res {
+                (_, Resource::Listener(listener) ) => {
+                    match listener.accept() {
+                        Ok( (stream, _endpoint) ) => {
+                            let index = scope.resources.borrow_mut().insert( Resource::Stream(stream) );
+                            scope.queue.push_back( Event::Accept(index) );
+                        },
+                        Err(err) if err.kind() == ErrorKind::WouldBlock => { /*do nothing*/ },
+                        Err(err) => println!("Accept: {err}"),
+                    }
+                    return false;
+                },
+                _ => {},
+            }
+        }
+        return true;
+    }
+
+    fn demux(&mut self, scope:&mut Scope) -> bool {
+        if let Some(event) = scope.queue.pop_front() {
+            match event {
+                Event::Accept(index) => {
+                    if let Some(_stream) = scope.resources.borrow_mut().get_mut(index) {
+                        let found = scope.handler.iter().find( |t| matches!(t.0, Token(i) if i == index) );
+                        if let Some((_, handler)) = found {
+                            let optev = handler(Token(index), None);
+
+                            if let Some(ev) = optev {
+                                scope.queue.push_back( ev );
+                            }
+                        }
+                    }
+
+                },
+                Event::Stop => {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     fn run_with<'scope, Setup>(&mut self, setup:Setup)
         where Setup: FnOnce(&mut Scope) -> Result<()> + 'scope
     {
@@ -62,6 +112,15 @@ impl Reactor {
             println!("Setup: {error}");
             return;
         }
+
+        loop{
+            scope.resources.borrow_mut().shrink_to_fit();
+            while self.poll(&mut scope) {}
+            if self.demux(&mut scope) {
+                break;
+            }
+        }
+
     }
 }
 
@@ -82,9 +141,9 @@ mod test {
                 }
 
                 let Token(index) = token;
-
-                Some(Event::Accept(index))
-
+                println!("Do somethingwith {index}");
+                // Some(Event::Stop)
+                None
             })?;
 
             Ok(())

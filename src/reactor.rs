@@ -23,7 +23,7 @@ enum Resource {
 pub struct Scope<'scope>{
     handler: Vec<(Token,Box<dyn Fn(Token, Option<Error>) -> Option<Event> + 'scope>)>,
     resources: Rc<RefCell<Slab<Resource>>>,
-    queue: VecDeque<Event>,
+    queue: VecDeque<(Event,Option<Error>)>,
 }
 
 impl<'scope> Scope<'scope> {
@@ -46,7 +46,6 @@ impl<'scope> Scope<'scope> {
         
         let index = self.resources.borrow_mut().insert(Resource::Listener(listener));
 
-        self.queue.push_back( Event::Accept(index) );
         self.handler.push( (Token(index), Box::new(handler)) );
 
         Ok(())
@@ -67,10 +66,12 @@ impl Reactor {
                     match listener.accept() {
                         Ok( (stream, _endpoint) ) => {
                             let index = scope.resources.borrow_mut().insert( Resource::Stream(stream) );
-                            scope.queue.push_back( Event::Accept(index) );
+                            scope.queue.push_back( (Event::Accept(index), None) );
                         },
                         Err(err) if err.kind() == ErrorKind::WouldBlock => { /*do nothing*/ },
-                        Err(err) => println!("Accept: {err}"),
+                        Err(err) => {
+                            scope.queue.push_back( (Event::Accept(err.raw_os_error().unwrap() as usize), Some(err) ) ); 
+                        },
                     }
                     return false;
                 },
@@ -83,20 +84,20 @@ impl Reactor {
     fn demux(&mut self, scope:&mut Scope) -> bool {
         if let Some(event) = scope.queue.pop_front() {
             match event {
-                Event::Accept(index) => {
+                (Event::Accept(index), opterr) => {
                     if let Some(_stream) = scope.resources.borrow_mut().get_mut(index) {
                         let found = scope.handler.iter().find( |t| matches!(t.0, Token(i) if i == index) );
                         if let Some((_, handler)) = found {
-                            let optev = handler(Token(index), None);
+                            let optev = handler(Token(index), opterr);
 
                             if let Some(ev) = optev {
-                                scope.queue.push_back( ev );
+                                scope.queue.push_back( (ev, None) );
                             }
                         }
                     }
 
                 },
-                Event::Stop => {
+                (Event::Stop, _) => {
                     return true;
                 }
             }

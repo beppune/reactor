@@ -18,7 +18,7 @@ enum Resource {
 }
 
 pub struct Scope<'scope>{
-    handler: Vec<(Token,Box<dyn Fn(Token, Option<Error>) + 'scope>)>,
+    handler: Vec<(Token,Box<dyn Fn(Token, Option<Error>) -> Option<Event> + 'scope>)>,
     resources: Slab<Resource>,
     queue: VecDeque<Event>,
 }
@@ -42,6 +42,7 @@ impl<'scope> Scope<'scope> {
         let index = self.resources.insert(Resource::Listener(listener));
         self.handler.push( (Token(index), Box::new(handler)) );
 
+
         Ok(())
     }
 }
@@ -57,7 +58,10 @@ impl Reactor {
         where Setup: FnOnce(&mut Scope) -> Result<()> + 'scope
     {
         let mut scope = Scope::new();
-        setup(&mut scope);
+        if let Err(error) = setup(&mut scope) {
+            println!("Setup: {error}");
+            return;
+        }
     }
 }
 

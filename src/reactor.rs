@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::vec;
-use std::os::fd::{AsFd, OwnedFd};
-use std::io;
+use std::os::fd::{AsFd, AsRawFd, OwnedFd, RawFd};
+use std::io::{self, ErrorKind};
 use std::fs::File;
 
-use nix::poll::{self, PollFd};
+use nix::fcntl::{self, OFlag};
+use nix::libc::O_RDONLY;
+use nix::poll::{self, PollFd, PollFlags};
+use nix::sys::stat::Mode;
 
 enum Interest {
     Read,
@@ -14,57 +18,54 @@ enum Action {
 }
 
 pub trait Handler {
-    fn handle(&mut self) -> Action;
+    fn handle(&mut self, fd: RawFd) -> Action;
 }
 
 struct FileReadHandler {
-    fd: OwnedFd,
-    content: String,
-    complete: Box<dyn Fn(&String)->Action>,
+    buffer: Vec<u8>,
+    ofd: OwnedFd,
 }
 
 impl Handler for FileReadHandler {
-    fn handle(&mut self) -> Action {
-        
-        (self.complete)(&self.content)
+    fn handle(&mut self, fd: RawFd) -> Action {
+
+        Action::Stop        
     }
 }
 
 pub struct Reactor {
-    pollable: Vec<(Box<dyn Handler>, Interest)>
+    fds: HashMap<RawFd, Box<dyn Handler>>,
 }
 
 impl Reactor {
 
     pub fn new() -> Self {
         Self {
-            pollable: vec![],
+            fds: HashMap::new(),
         }
     }
 
     pub fn run(&mut self) {
         // poll
-        let mut polls: Vec<PollFd> = vec![];
-        for i in self.pollable {
-            polls.push(i.0.fd);
-        }
+        self.fds.keys().map(|f| {
+            
+        });
 
         // demux
 
         // update
     }
 
-    pub(crate) fn read_file(&mut self, path:&str, complete:impl Fn(&String)->Action + 'static) -> io::Result<()> {
-        let fd = File::open(path)?
-            .as_fd().try_clone_to_owned()?;
+    pub(crate) fn read_file(&mut self, path:&str) -> io::Result<()> {
+        let ofd = fcntl::open(path, OFlag::from_bits(O_RDONLY).unwrap(), Mode::empty())?;
+        let fd = ofd.as_raw_fd();
 
         let h = Box::new(FileReadHandler {
-            fd,
-            content: String::new(),
-            complete: Box::new(complete),
+            ofd,
+            buffer: vec![]
         });
 
-        self.pollable.push((h, Interest::Read));
+        self.fds.insert(fd, h);
 
         Ok(())
     }

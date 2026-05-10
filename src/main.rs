@@ -6,7 +6,7 @@ fn main() {
 
     let mut rct = Reactor::new();
 
-    rct.read_file("./example.txt", |content:String| println!("{content}") );
+    let _ = rct.read_file("Cargo.toml");
 
     rct.run();
 }

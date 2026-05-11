@@ -3,9 +3,12 @@ mod files;
 mod reactor;
 mod timer;
 
+use std::time::Duration;
+
 use reactor::Reactor;
 
 use crate::files::FileOperation;
+use crate::timer::TimerOperation;
 
 fn main() {
 
@@ -25,6 +28,10 @@ fn main() {
 
         println!("wrote bytes: {n}");
 
+    });
+
+    let _ = rct.start_timer(Duration::from_secs(5), ||{
+        println!("Timer expired");
     });
 
     rct.run();

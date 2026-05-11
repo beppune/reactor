@@ -1,77 +1,14 @@
-use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::vec;
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
+
+use std::os::fd::{AsFd, AsRawFd, OwnedFd, RawFd};
 use std::io::{self};
 
-use nix::errno::Errno;
 use nix::fcntl::{self, OFlag};
 use nix::libc::{O_CREAT, O_RDONLY, O_WRONLY, POLLIN, POLLOUT};
 use nix::{poll::{PollFd, PollFlags, PollTimeout}, sys::stat::Mode};
 
-enum Interest {
-    Read,
-    Write,
-}
-
-pub enum Action {
-    Stop,
-    Continue, 
-}
-
-pub trait Handler {
-    fn handle(&mut self, fd: BorrowedFd) -> Action;
-}
-
-struct FileWriterHandler {
-    buffer: Vec<u8>,
-    complete: Option<Box<dyn FnOnce(Vec<u8>, usize)>>,
-}
-
-impl Handler for FileWriterHandler {
-    fn handle(&mut self, fd: BorrowedFd) -> Action {
-        let action:Action;
-
-        match nix::unistd::write(fd, &mut self.buffer) {
-            Ok(n) => {
-                let data = std::mem::take(&mut self.buffer);
-                let cb = std::mem::take(&mut self.complete).unwrap();
-
-                (cb)(data, n);
-                action = Action::Stop;
-            },
-            Err(e) if e == Errno::EAGAIN => action = Action::Continue,
-            Err(_) => action = Action::Stop,
-        }
-
-        action
-    }
-}
-
-struct FileReadHandler {
-    buffer: Vec<u8>,
-    complete: Option<Box<dyn FnOnce(Vec<u8>, usize)>>,
-}
-
-impl Handler for FileReadHandler {
-    fn handle(&mut self, fd: BorrowedFd) -> Action {
-        let action;
-        match nix::unistd::read(fd, &mut self.buffer) {
-            Ok(n) => {
-                let data = std::mem::take(&mut self.buffer);
-                let cb = std::mem::take(&mut self.complete).unwrap();
-
-                (cb)(data, n);
-
-                action = Action::Stop
-            },
-            Err(e) if e == Errno::EAGAIN => action = Action::Continue,
-            Err(_) => action = Action::Stop,
-        }
-
-        action
-    }
-}
+use crate::files::{FileReadHandler, FileWriterHandler};
+use crate::handler::{Handler, Action, Interest};
 
 pub struct Reactor {
     fds: HashMap<RawFd, (OwnedFd, Box<dyn Handler>, Interest)>,
@@ -122,7 +59,7 @@ impl Reactor {
         // loop
     }
 
-    pub fn read_file(&mut self, path:&str, cb:impl FnOnce(Vec<u8>, usize) +'static ) -> io::Result<()> {
+    pub fn read_file(&mut self, path:&str, cb:impl FnOnce(Vec<u8>, usize) + 'static ) -> io::Result<()> {
         let ofd = fcntl::open(path, OFlag::from_bits(O_RDONLY).unwrap(), Mode::empty())?;
         let fd = ofd.as_raw_fd();
 

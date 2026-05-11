@@ -1,13 +1,10 @@
 use std::collections::HashMap;
 
 use std::os::fd::{AsFd, AsRawFd, OwnedFd, RawFd};
-use std::io::{self};
 
-use nix::fcntl::{self, OFlag};
-use nix::libc::{O_CREAT, O_RDONLY, O_WRONLY, POLLIN, POLLOUT};
-use nix::{poll::{PollFd, PollFlags, PollTimeout}, sys::stat::Mode};
+use nix::libc::{POLLIN, POLLOUT};
+use nix::poll::{PollFd, PollFlags, PollTimeout};
 
-use crate::files::{FileReadHandler, FileWriterHandler};
 use crate::handler::{Handler, Action, Interest};
 
 pub struct Reactor {
@@ -20,6 +17,10 @@ impl Reactor {
         Self {
             fds: HashMap::new(),
         }
+    }
+
+    pub fn register(&mut self, ofd:OwnedFd, handler: Box<dyn Handler>, int:Interest) {
+        self.fds.insert(ofd.as_raw_fd(), (ofd, handler, int));
     }
 
     pub fn run(&mut self) {
@@ -59,34 +60,5 @@ impl Reactor {
         // loop
     }
 
-    pub fn read_file(&mut self, path:&str, cb:impl FnOnce(Vec<u8>, usize) + 'static ) -> io::Result<()> {
-        let ofd = fcntl::open(path, OFlag::from_bits(O_RDONLY).unwrap(), Mode::empty())?;
-        let fd = ofd.as_raw_fd();
-
-        let h = Box::new(FileReadHandler {
-            buffer: vec![0; 512],
-            complete: Some(Box::new(cb)),
-        });
-
-        self.fds.insert(fd, (ofd, h, Interest::Read) );
-
-        Ok(())
-    }
-
-    pub fn write_file(&mut self, path: &str, buffer:Vec<u8>, cb: impl FnOnce(Vec<u8>, usize) + 'static ) -> io::Result<()> {
-
-        let ofd = fcntl::open(path, OFlag::from_bits(O_WRONLY|O_CREAT).unwrap(), Mode::empty())?;
-
-        let fd = ofd.as_raw_fd();
-
-        let h = Box::new(FileWriterHandler {
-            buffer,
-            complete: Some(Box::new(cb)),
-        });
-
-        self.fds.insert(fd, (ofd, h, Interest::Write));
-
-        Ok(())
-    }
 
 }

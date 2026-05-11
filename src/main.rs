@@ -1,8 +1,11 @@
 mod handler;
 mod files;
 mod reactor;
+mod timer;
 
 use reactor::Reactor;
+
+use crate::files::FileOperation;
 
 fn main() {
 

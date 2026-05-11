@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 use std::os::fd::{AsFd, AsRawFd, OwnedFd, RawFd};
+use std::sync::mpsc;
+use std::thread;
 
-use nix::libc::{POLLIN, POLLOUT};
+use nix::libc::{POLLIN, POLLOUT, TX_ANNOUNCE};
 use nix::poll::{PollFd, PollFlags, PollTimeout};
 
 use crate::handler::{Handler, Action, Interest};
@@ -24,6 +26,17 @@ impl Reactor {
     }
 
     pub fn run(&mut self) {
+        let (tx, rx) = mpsc::channel::<Box<dyn FnOnce() + Send + 'static>>();
+
+        let executor_thread = thread::spawn(move ||{
+            loop {
+                match rx.recv() {
+                    Ok(task) => task(),
+                    Err(_) => break ,
+                }
+            }
+        });
+
         loop {
             if self.fds.is_empty() {
                 break;
@@ -53,11 +66,18 @@ impl Reactor {
                     Action::Continue => {
 
                     },
+                    Action::Task(task) => {
+                        self.fds.remove(&fd).unwrap();
+                        let _ = tx.send(task);
+                    }
                 }
+
             }
             // demux
         }
         // loop
+        drop(tx);
+        let _ = executor_thread.join();
     }
 
 

@@ -8,6 +8,7 @@ pub enum Interest {
 pub enum Action {
     Stop,
     Continue, 
+    Task(Box<dyn FnOnce() + Send + 'static>),
 }
 
 pub trait Handler {

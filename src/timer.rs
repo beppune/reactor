@@ -7,25 +7,27 @@ use crate::{handler::{Action, Handler, Interest}, reactor::Reactor};
 
 
 pub struct TimerHander {
-    callback: Option<Box<dyn FnOnce()>>,
+    callback: Option<Box<dyn FnOnce() + Send + 'static>>,
 }
 
 impl Handler for TimerHander {
     fn handle(&mut self, _fd: BorrowedFd) -> crate::handler::Action {
         let cb = std::mem::take(&mut self.callback).unwrap();
 
-        (cb)();
+        let task = Box::new(move ||{
+            (cb)()
+        });
 
-        Action::Stop
+        Action::Task(task)
     }
 }
 
 pub trait TimerOperation {
-    fn start_timer(&mut self, d:Duration, cb: impl FnOnce() + 'static ) -> io::Result<()>;
+    fn start_timer(&mut self, d:Duration, cb: impl FnOnce() + Send + 'static ) -> io::Result<()>;
 }
 
 impl TimerOperation for Reactor {
-    fn start_timer(&mut self, d:Duration, cb: impl FnOnce() + 'static ) -> io::Result<()> {
+    fn start_timer(&mut self, d:Duration, cb: impl FnOnce() + Send + 'static ) -> io::Result<()> {
 
         let tfd = TimerFd::new(ClockId::CLOCK_MONOTONIC, TimerFlags::from_bits(TFD_NONBLOCK).unwrap() )?;
         tfd.set(Expiration::OneShot(TimeSpec::from_duration(d)), TimerSetTimeFlags::empty())?;

@@ -12,7 +12,7 @@ use crate::{handler::*, reactor::Reactor};
 
 struct FileWriterHandler {
     pub buffer: Vec<u8>,
-    pub complete: Option<Box<dyn FnOnce(Vec<u8>, usize)>>,
+    pub complete: Option<Box<dyn FnOnce(Vec<u8>, usize)+ Send>>,
 }
 
 impl Handler for FileWriterHandler {
@@ -24,8 +24,11 @@ impl Handler for FileWriterHandler {
                 let data = take(&mut self.buffer);
                 let cb = take(&mut self.complete).unwrap();
 
-                (cb)(data, n);
-                action = Action::Stop;
+                let task = Box::new(move || {
+                    (cb)(data,n)
+                });
+
+                action = Action::Task(task);
             },
             Err(e) if e == Errno::EAGAIN => action = Action::Continue,
             Err(_) => action = Action::Stop,
@@ -37,7 +40,7 @@ impl Handler for FileWriterHandler {
 
 struct FileReadHandler {
     pub buffer: Vec<u8>,
-    pub complete: Option<Box<dyn FnOnce(Vec<u8>, usize)>>,
+    pub complete: Option<Box<dyn FnOnce(Vec<u8>, usize) + Send>>,
 }
 
 impl Handler for FileReadHandler {
@@ -48,9 +51,11 @@ impl Handler for FileReadHandler {
                 let data = take(&mut self.buffer);
                 let cb = take(&mut self.complete).unwrap();
 
-                (cb)(data, n);
+                let task = Box::new(move || {
+                    (cb)(data, n)
+                });
 
-                action = Action::Stop
+                action = Action::Task(task)
             },
             Err(e) if e == Errno::EAGAIN => action = Action::Continue,
             Err(_) => action = Action::Stop,
@@ -62,13 +67,13 @@ impl Handler for FileReadHandler {
 
 pub trait FileOperation {
     
-    fn read_file(&mut self, path:&str, cb:impl FnOnce(Vec<u8>, usize) + 'static ) -> io::Result<()>;
-    fn write_file(&mut self, path: &str, buffer:Vec<u8>, cb: impl FnOnce(Vec<u8>, usize) + 'static ) -> io::Result<()>;
+    fn read_file(&mut self, path:&str, cb:impl FnOnce(Vec<u8>, usize) + Send + 'static ) -> io::Result<()>;
+    fn write_file(&mut self, path: &str, buffer:Vec<u8>, cb: impl FnOnce(Vec<u8>, usize) + Send + 'static ) -> io::Result<()>;
 }
 
 impl FileOperation for Reactor {
     
-    fn read_file(&mut self, path:&str, cb:impl FnOnce(Vec<u8>, usize) + 'static ) -> io::Result<()> {
+    fn read_file(&mut self, path:&str, cb:impl FnOnce(Vec<u8>, usize) + Send + 'static ) -> io::Result<()> {
         let ofd = open(path, OFlag::from_bits(O_RDONLY).unwrap(), Mode::empty())?;
 
         let h = Box::new(FileReadHandler {
@@ -81,7 +86,7 @@ impl FileOperation for Reactor {
         Ok(())
     }
 
-    fn write_file(&mut self, path: &str, buffer:Vec<u8>, cb: impl FnOnce(Vec<u8>, usize) + 'static ) -> io::Result<()> {
+    fn write_file(&mut self, path: &str, buffer:Vec<u8>, cb: impl FnOnce(Vec<u8>, usize) + Send + 'static ) -> io::Result<()> {
 
         let ofd = open(path, OFlag::from_bits(O_WRONLY|O_CREAT).unwrap(), Mode::empty())?;
 

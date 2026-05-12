@@ -2,7 +2,7 @@ mod handler;
 mod files;
 mod reactor;
 mod timer;
-
+mod signals;
 
 use std::{sync::{Arc, Mutex}, time::Duration};
 

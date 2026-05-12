@@ -3,36 +3,38 @@ mod files;
 mod reactor;
 mod timer;
 
-use std::time::Duration;
+
+use std::{sync::{Arc, Mutex}, time::Duration};
 
 use reactor::Reactor;
 
-use crate::files::FileOperation;
-use crate::timer::TimerOperation;
+use crate::{files::FileOperation, timer::TimerOperation};
 
 fn main() {
 
-
     let mut rct = Reactor::new();
 
-    let _ = rct.read_file("Cargo.toml", |data, n| {
+    let all_data = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let all_data_chunk = all_data.clone();
 
-        let s = String::from_utf8(data).unwrap();
-        println!("{n} bytes red\n{s}");
+    let _ = rct.read_file("Cargo.toml", Some(20), move |data, n| {
 
-    });
-
-    let buffer:String = String::from("HEllo\n");
-
-    let _ = rct.write_file("text.txt", Vec::from(buffer), |_data, n|{
-
-        println!("wrote bytes: {n}");
+        all_data_chunk.lock().unwrap().extend_from_slice(&data[..n]);
 
     });
 
-    let _ = rct.start_timer(Duration::from_secs(5), ||{
-        println!("Timer expired");
+    let s = String::from("Hello, this is a test\n");
+
+    let _ = rct.write_file("text.txt", Some(20), s.into_bytes(), |_data, n| {
+        if n < 20 {
+            println!("file written");
+        }
     });
+
+    let _ = rct.start_timer(Duration::from_secs(3), || println!("Timer expired"));
 
     rct.run();
+
+    let s = String::from_utf8(all_data.lock().unwrap().to_vec()).unwrap();
+    println!("{s}");
 }

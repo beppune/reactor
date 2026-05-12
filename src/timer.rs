@@ -14,11 +14,9 @@ impl Handler for TimerHander {
     fn handle(&mut self, _fd: BorrowedFd) -> crate::handler::Action {
         let cb = std::mem::take(&mut self.callback).unwrap();
 
-        let task = Box::new(move ||{
-            (cb)()
-        });
+        (cb)();
 
-        Action::Task(task)
+        Action::Stop
     }
 }
 

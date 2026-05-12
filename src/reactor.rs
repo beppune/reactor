@@ -4,7 +4,7 @@ use std::os::fd::{AsFd, AsRawFd, OwnedFd, RawFd};
 use std::sync::mpsc;
 use std::thread;
 
-use nix::libc::{POLLIN, POLLOUT, TX_ANNOUNCE};
+use nix::libc::{POLLIN, POLLOUT};
 use nix::poll::{PollFd, PollFlags, PollTimeout};
 
 use crate::handler::{Handler, Action, Interest};
@@ -55,23 +55,26 @@ impl Reactor {
                 }
             }
             // demux
+            let mut toberemoved:Vec<i32> = vec![];
             for fd in topolls {
                 let (ofd, hnd, _int) = self.fds.get_mut(&fd).unwrap();
                 let action = hnd.handle(ofd.as_fd());
 
                 match action {
                     Action::Stop => { 
-                        self.fds.remove(&fd).unwrap();
+                        toberemoved.push(fd);
                     },
                     Action::Continue => {
 
                     },
                     Action::Task(task) => {
-                        self.fds.remove(&fd).unwrap();
                         let _ = tx.send(task);
                     }
                 }
 
+            }
+            for t in toberemoved {
+               self.fds.remove(&t).unwrap();
             }
             // demux
         }

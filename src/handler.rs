@@ -9,6 +9,7 @@ pub enum Action {
     Stop,
     Continue, 
     Task(Box<dyn FnOnce() + Send + 'static>),
+    TaskAndStop(Box<dyn FnOnce() + Send + 'static>),
 }
 
 pub trait Handler {

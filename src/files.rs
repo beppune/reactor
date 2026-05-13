@@ -8,6 +8,7 @@ use nix::unistd::read;
 
 use nix::fcntl::open;
 
+use crate::filectx::FileReadContext;
 use crate::{handler::*, reactor::Reactor};
 
 struct FileWriterHandler {
@@ -53,21 +54,27 @@ impl Handler for FileWriterHandler {
 
 struct FileReadHandler {
     pub buffer: Vec<u8>,
-    pub complete: Arc<Mutex<dyn FnMut(Vec<u8>, usize) + Send>>
+    pub ctx: FileReadContext,
 }
 
 impl Handler for FileReadHandler {
     fn handle(&mut self, fd: BorrowedFd) -> Action {
         let action;
         match read(fd, &mut self.buffer) {
-            Ok(0) => action = Action::Stop,
+            Ok(0) => {
+                let eof = std::mem::take(&mut self.ctx.make_eof_task());
+                if let Some(task) = eof {
+                    return Action::TaskAndStop(task);
+                }
+                action = Action::Stop;
+            },
             Ok(n) => {
                 let chunk = self.buffer[..n].to_vec();
-                let arc = self.complete.clone();
+                let arc = self.ctx.make_chunk_task(chunk);
 
                 let task = Box::new(move || {
-                    let mut callback = arc.lock().unwrap();
-                    (callback)(chunk, n);
+                    let callback = arc.unwrap();
+                    (callback)();
                 });
 
                 action = Action::Task(task);
@@ -82,20 +89,22 @@ impl Handler for FileReadHandler {
 
 pub trait FileOperation {
     
-    fn read_file(&mut self, path:&str, max:Option<usize>, cb:impl FnMut(Vec<u8>, usize) + Send + 'static ) -> io::Result<()>;
+    fn read_file(&mut self, path:&str, configure: impl FnOnce(&mut FileReadContext)) -> io::Result<()>;
     fn write_file(&mut self, path: &str, max:Option<usize>, buffer:Vec<u8>, cb: impl FnMut(Vec<u8>, usize) + Send + 'static ) -> io::Result<()>;
 }
 
 impl FileOperation for Reactor {
     
-    fn read_file(&mut self, path:&str, max:Option<usize>, cb: impl FnMut(Vec<u8>, usize) + Send + 'static ) -> io::Result<()> {
+    fn read_file(&mut self, path:&str, configure: impl FnOnce(&mut FileReadContext)) -> io::Result<()> {
         let ofd = open(path, OFlag::from_bits(O_RDONLY).unwrap(), Mode::empty())?;
 
-        let m = max.unwrap_or(512);
+        let mut ctx = FileReadContext::new(512);
+
+        configure(&mut ctx);
 
         let h = Box::new(FileReadHandler {
-            buffer: vec![0; m],
-            complete: Arc::new(Mutex::new(cb))
+            buffer: vec![0; ctx.chunk_size()],
+            ctx,
         });
 
         self.register(ofd, h, Interest::Read);

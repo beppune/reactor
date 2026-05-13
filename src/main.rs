@@ -1,5 +1,6 @@
 mod handler;
 mod files;
+mod filectx;
 mod reactor;
 mod timer;
 mod signals;
@@ -15,16 +16,13 @@ fn main() {
 
     let mut rct = Reactor::new();
 
-    let all_data = Arc::new(Mutex::new(Vec::<u8>::new()));
-    let all_data_chunk = all_data.clone();
-
-    let _ = rct.read_file("Cargo.toml", Some(20), move |data, n| {
-
-        all_data_chunk.lock().unwrap().extend_from_slice(&data[..n]);
-        if n < 20 {
-            let s = String::from_utf8(all_data.lock().unwrap().to_vec()).unwrap();
+    let _ = rct.read_file("Cargo.toml", |ctx|{
+        // ctx.on_chunk(|data, ctx| ctx.push_bytes(&data) );
+        ctx.on_eof(|ctx| {
+            let v = ctx.take();
+            let s = String::from_utf8_lossy(&v);
             println!("{s}");
-        }
+        });
 
     });
 
@@ -37,10 +35,6 @@ fn main() {
     });
 
     let _ = rct.start_timer(Duration::from_secs(3), || println!("Timer expired"));
-
-    let _ = rct.on_signal( &[SIGUSR1], move |sig| {
-        println!("A signal was caught: {sig}");
-    });
 
     rct.run();
 

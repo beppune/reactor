@@ -69,6 +69,10 @@ impl Reactor {
                     },
                     Action::Task(task) => {
                         let _ = tx.send(task);
+                    },
+                    Action::TaskAndStop(task) => {
+                        let _ = tx.send(task);
+                        toberemoved.push(fd);
                     }
                 }
 

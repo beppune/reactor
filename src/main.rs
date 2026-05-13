@@ -6,9 +6,10 @@ mod signals;
 
 use std::{sync::{Arc, Mutex}, time::Duration};
 
+use nix::sys::signal::Signal::SIGUSR1;
 use reactor::Reactor;
 
-use crate::{files::FileOperation, timer::TimerOperation};
+use crate::{files::FileOperation, signals::SignalOperations, timer::TimerOperation};
 
 fn main() {
 
@@ -20,6 +21,10 @@ fn main() {
     let _ = rct.read_file("Cargo.toml", Some(20), move |data, n| {
 
         all_data_chunk.lock().unwrap().extend_from_slice(&data[..n]);
+        if n < 20 {
+            let s = String::from_utf8(all_data.lock().unwrap().to_vec()).unwrap();
+            println!("{s}");
+        }
 
     });
 
@@ -33,8 +38,10 @@ fn main() {
 
     let _ = rct.start_timer(Duration::from_secs(3), || println!("Timer expired"));
 
+    let _ = rct.on_signal( &[SIGUSR1], move |sig| {
+        println!("A signal was caught: {sig}");
+    });
+
     rct.run();
 
-    let s = String::from_utf8(all_data.lock().unwrap().to_vec()).unwrap();
-    println!("{s}");
 }

@@ -6,14 +6,11 @@ use crate::{framer::Framer, handler::{Handler, Interest}, reactor::Reactor};
 
 
 struct PipeReadHandler {
-    framer: Framer
 }
 
 impl Handler for PipeReadHandler {
     fn handle(&mut self, fd: BorrowedFd) -> crate::handler::Action {
-        match read(fd, , count) {
-            
-        }
+        todo!();
     }
 }
 
@@ -27,11 +24,6 @@ impl PipeOperations for Reactor {
         let mode = Mode::empty();
         let ofd = nix::fcntl::open(path, oflags, mode)?;
 
-        let h = Box::new(PipeReadHandler {
-            framer: Framer::with_capacity(512),
-        });
-
-        self.register(ofd, h, Interest::Read);
         Ok(())
     }
 }

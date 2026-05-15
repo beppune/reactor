@@ -16,7 +16,7 @@ use std::{
 ///
 /// Il protocollo di framing è line-based: la sequenza `\r\n` separa un frame
 /// dal successivo (come in HTTP/1.1, SMTP, Redis RESP, ecc.).
-pub trait Framer<Ring> {
+pub trait Framer {
     // Nota: non serve un campo `start` per tracciare la posizione di scansione.
     // La scansione parte sempre dall'indice 0 del buffer (cioè dal byte più vecchio).
     //
@@ -29,7 +29,7 @@ pub trait Framer<Ring> {
     fn push(&mut self, bytes: &[u8]) -> io::Result<()>;
 }
 
-impl<R> Framer<R> for VecDeque<u8> {
+impl Framer for VecDeque<u8> {
 
     /// Tenta di estrarre un frame completo dal buffer.
     ///
@@ -115,12 +115,11 @@ impl<R> Framer<R> for VecDeque<u8> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use super::Framer;
 
     /// Buffer vuoto: nessun frame disponibile.
     #[test]
     fn no_data() {
-        let mut framer = Framer::with_capacity(20);
+        let mut framer:VecDeque<u8> = VecDeque::<u8>::with_capacity(20);
         let frame = framer.try_frame();
         assert!(matches!(frame, Err(e) if e.kind() == ErrorKind::WouldBlock));
     }
@@ -136,7 +135,7 @@ mod test {
     /// Un singolo frame completo: viene estratto senza il delimitatore.
     #[test]
     fn single_frame() {
-        let mut framer = Framer::with_capacity(20);
+        let mut framer = VecDeque::<u8>::with_capacity(20);
         framer.push(b"hello\r\n").unwrap();
         let (frame, n) = framer.try_frame().unwrap();
         assert_eq!(frame, b"hello");
@@ -147,7 +146,7 @@ mod test {
     /// Dopo il primo consume, il secondo è ancora nel buffer.
     #[test]
     fn two_frames() {
-        let mut framer = Framer::with_capacity(30);
+        let mut framer = VecDeque::<u8>::with_capacity(30);
         framer.push(b"foo\r\nbar\r\n").unwrap();
 
         let (frame, n) = framer.try_frame().unwrap();
@@ -162,7 +161,7 @@ mod test {
     /// Frame spezzato su due push successive: funziona anche con read parziali.
     #[test]
     fn split_across_pushes() {
-        let mut framer = Framer::with_capacity(20);
+        let mut framer = VecDeque::<u8>::with_capacity(20);
         framer.push(b"hel").unwrap();
         framer.push(b"lo\r\n").unwrap();
 

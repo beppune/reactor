@@ -16,8 +16,7 @@ use std::{
 ///
 /// Il protocollo di framing è line-based: la sequenza `\r\n` separa un frame
 /// dal successivo (come in HTTP/1.1, SMTP, Redis RESP, ecc.).
-pub struct Framer {
-    buffer: VecDeque<u8>,
+pub trait Framer<Ring> {
     // Nota: non serve un campo `start` per tracciare la posizione di scansione.
     // La scansione parte sempre dall'indice 0 del buffer (cioè dal byte più vecchio).
     //
@@ -25,18 +24,12 @@ pub struct Framer {
     // `start` come ottimizzazione per evitare di riscansionare byte già esaminati.
     // In quel caso `start` andrebbe impostato a `len - 1` dopo ogni scansione fallita,
     // perché l'ultimo byte potrebbe essere un `\r` il cui `\n` arriva nel prossimo push.
+    fn try_frame(&self) -> io::Result<(Vec<u8>, usize)>;
+    fn consume(&mut self, n: usize);
+    fn push(&mut self, bytes: &[u8]) -> io::Result<()>;
 }
 
-impl Framer {
-    /// Crea un Framer con capacità fissa `c`.
-    ///
-    /// `with_capacity` è solo un hint di pre-allocazione: VecDeque non impone
-    /// un limite rigido. La dimensione fissa è enforciata dalla logica in `push`.
-    pub fn with_capacity(c: usize) -> Self {
-        Self {
-            buffer: VecDeque::with_capacity(c),
-        }
-    }
+impl<R> Framer<R> for VecDeque<u8> {
 
     /// Tenta di estrarre un frame completo dal buffer.
     ///
@@ -52,19 +45,19 @@ impl Framer {
     /// non è un errore — è la condizione normale di "dati insufficienti,
     /// riprova quando arrivano altri byte". WouldBlock esprime esattamente
     /// questa semantica non-bloccante.
-    pub fn try_frame(&self) -> io::Result<(Vec<u8>, usize)> {
+    fn try_frame(&self) -> io::Result<(Vec<u8>, usize)> {
         // Servono almeno 2 byte per contenere `\r\n`.
-        if self.buffer.len() < 2 {
+        if self.len() < 2 {
             return Err(ErrorKind::WouldBlock.into());
         }
 
         // Scansione lineare alla ricerca di `\r\n`.
         // Il range è `0..len()-1` perché confrontiamo sempre `buffer[i]` con `buffer[i+1]`.
-        for i in 0..self.buffer.len() - 1 {
-            if self.buffer[i] == b'\r' && self.buffer[i + 1] == b'\n' {
+        for i in 0..self.len() - 1 {
+            if self[i] == b'\r' && self[i + 1] == b'\n' {
                 // Payload = [0..i), delimitatore = 2 byte.
                 // Non consumiamo qui: restituiamo anche quanti byte consumare dal buffer.
-                let frame: Vec<u8> = self.buffer.iter().take(i).copied().collect();
+                let frame: Vec<u8> = self.iter().take(i).copied().collect();
                 let to_consume = i + 2; // payload + "\r\n"
                 return Ok((frame, to_consume));
             }
@@ -77,8 +70,8 @@ impl Framer {
     ///
     /// Tipicamente `n` è il secondo elemento della tupla restituita da `try_frame`
     /// (payload + delimitatore).
-    pub fn consume(&mut self, n: usize) {
-        self.buffer.drain(0..n);
+    fn consume(&mut self, n: usize) {
+        self.drain(0..n);
     }
 
     /// Inserisce un blocco di byte nel buffer, rispettando la dimensione fissa.
@@ -91,8 +84,8 @@ impl Framer {
     /// non ancora estratto con `try_frame`, quei dati sono persi.
     /// È responsabilità del chiamante estrarre i frame prima che il buffer
     /// si riempia, oppure dimensionare il buffer in modo adeguato.
-    pub fn push(&mut self, bytes: &[u8]) -> io::Result<()> {
-        let cap = self.buffer.capacity();
+    fn push(&mut self, bytes: &[u8]) -> io::Result<()> {
+        let cap = self.capacity();
 
         // Caso speciale: i dati nuovi sono più grandi dell'intera capacità.
         // fallisci con errore: non si possono scrivere piu' bytes della capacity
@@ -104,17 +97,17 @@ impl Framer {
         }
 
         // Caso normale: calcoliamo quanto spazio libero c'è.
-        let avail = cap - self.buffer.len();
+        let avail = cap - self.len();
 
         // Se i dati nuovi non ci stanno nello spazio libero,
         // rimuoviamo esattamente l'eccedenza dal fronte (i più vecchi).
         if bytes.len() > avail {
             let diff = bytes.len() - avail;
-            self.buffer.drain(0..diff);
+            self.drain(0..diff);
         }
 
         // Inserimento: `extend` chiama internamente `push_back` per ogni byte.
-        self.buffer.extend(bytes);
+        self.extend(bytes);
         Ok(())
     }
 }
@@ -122,6 +115,7 @@ impl Framer {
 #[cfg(test)]
 mod test {
     use super::*;
+    use super::Framer;
 
     /// Buffer vuoto: nessun frame disponibile.
     #[test]
@@ -134,8 +128,8 @@ mod test {
     /// Dati presenti ma senza delimitatore: frame incompleto.
     #[test]
     fn incomplete_frame() {
-        let mut framer = Framer::with_capacity(20);
-        framer.push(b"hello").unwrap();
+        let mut framer = VecDeque::with_capacity(20);
+        Framer::push(&mut framer, b"hello").unwrap();
         assert!(matches!(framer.try_frame(), Err(e) if e.kind() == ErrorKind::WouldBlock));
     }
 

@@ -16,7 +16,7 @@ use std::{
 ///
 /// Il protocollo di framing è line-based: la sequenza `\r\n` separa un frame
 /// dal successivo (come in HTTP/1.1, SMTP, Redis RESP, ecc.).
-struct Framer {
+pub struct Framer {
     buffer: VecDeque<u8>,
     // Nota: non serve un campo `start` per tracciare la posizione di scansione.
     // La scansione parte sempre dall'indice 0 del buffer (cioè dal byte più vecchio).
@@ -32,7 +32,7 @@ impl Framer {
     ///
     /// `with_capacity` è solo un hint di pre-allocazione: VecDeque non impone
     /// un limite rigido. La dimensione fissa è enforciata dalla logica in `push`.
-    fn with_capacity(c: usize) -> Self {
+    pub fn with_capacity(c: usize) -> Self {
         Self {
             buffer: VecDeque::with_capacity(c),
         }
@@ -52,7 +52,7 @@ impl Framer {
     /// non è un errore — è la condizione normale di "dati insufficienti,
     /// riprova quando arrivano altri byte". WouldBlock esprime esattamente
     /// questa semantica non-bloccante.
-    fn try_frame(&self) -> io::Result<(Vec<u8>, usize)> {
+    pub fn try_frame(&self) -> io::Result<(Vec<u8>, usize)> {
         // Servono almeno 2 byte per contenere `\r\n`.
         if self.buffer.len() < 2 {
             return Err(ErrorKind::WouldBlock.into());
@@ -77,7 +77,7 @@ impl Framer {
     ///
     /// Tipicamente `n` è il secondo elemento della tupla restituita da `try_frame`
     /// (payload + delimitatore).
-    fn consume(&mut self, n: usize) {
+    pub fn consume(&mut self, n: usize) {
         self.buffer.drain(0..n);
     }
 
@@ -91,7 +91,7 @@ impl Framer {
     /// non ancora estratto con `try_frame`, quei dati sono persi.
     /// È responsabilità del chiamante estrarre i frame prima che il buffer
     /// si riempia, oppure dimensionare il buffer in modo adeguato.
-    fn push(&mut self, bytes: &[u8]) -> io::Result<()> {
+    pub fn push(&mut self, bytes: &[u8]) -> io::Result<()> {
         let cap = self.buffer.capacity();
 
         // Caso speciale: i dati nuovi sono più grandi dell'intera capacità.

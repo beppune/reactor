@@ -5,6 +5,7 @@ mod reactor;
 mod timer;
 mod signals;
 mod framer;
+mod pipes;
 
 use std::{sync::{Arc, Mutex}, time::Duration};
 

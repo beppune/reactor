@@ -2,19 +2,22 @@ use std::{collections::VecDeque, io, os::fd::BorrowedFd, sync::{Arc, Mutex}, vec
 
 use nix::{fcntl::OFlag, libc::{O_NONBLOCK, O_RDONLY, read}, sys::stat::Mode, unistd::read};
 
-use crate::{framer::Framer, handler::{Handler, Interest}, reactor::Reactor};
+use crate::{framer::Framer, handler::{Action, Handler, Interest}, reactor::Reactor};
 
 
 struct PipeReadHandler {
-    pub buffer: VecDeque<u8>,
+    pub temp: Vec<u8>,
+    pub queue: VecDeque<u8>,
     pub complete: Arc<Mutex<dyn FnMut(Vec<u8>) + Send>>,
 }
 
 impl Handler for PipeReadHandler {
     fn handle(&mut self, fd: BorrowedFd) -> crate::handler::Action {
-        match read(fd, self.buffer.get_mut) {
+        match read(fd, &self.temp[self.temp.capacity()) {
             
         }
+
+        Action::Stop
     }
 }
 
@@ -29,7 +32,8 @@ impl PipeOperations for Reactor {
         let ofd = nix::fcntl::open(path, oflags, mode)?;
 
         let h = Box::new(PipeReadHandler {
-            buffer: VecDeque::with_capacity(512),
+            temp: vec![0; 512],
+            queue: VecDeque::with_capacity(512),
             complete: Arc::new(Mutex::new(cb)),
         });
 

@@ -24,6 +24,8 @@ fn main() {
             let s = String::from_utf8(data).unwrap();
             println!("{s}");
         });
+
+        ctx.on_close(|_ctx| println!("closing pipe"));
         
     });
 

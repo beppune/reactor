@@ -21,21 +21,21 @@ impl PipeContext {
     }
 
     pub fn make_chunk_task(&self, chunk: Vec<u8>) -> Option<Box<dyn FnOnce() + Send + 'static>> {
-         let ctx = self.clone();
+        let ctx = self.clone();
 
-         Some(Box::new(move || {
-             let mut slot = ctx.on_chunk.lock().unwrap();
+        Some(Box::new(move || {
+            let mut slot = ctx.on_chunk.lock().unwrap();
 
-             if let Some(cb) = slot.as_mut() {
+            if let Some(cb) = slot.as_mut() {
                 (cb)(chunk, &ctx);
-             }
-         }))
+            } 
+        }))
     }
 
     pub fn on_chunk(&mut self, cb: impl FnMut(Vec<u8>, &PipeContext) + Send + 'static) {
 
         *self.on_chunk.lock().unwrap() = Some(Box::new(cb));
-        
+
     }
 
     pub fn make_close_task(&self) -> Option<Box<dyn FnOnce() + Send + 'static>> {
@@ -69,24 +69,33 @@ impl Handler for PipeReadHandler {
             Ok(0) => {
                 let arc = self.ctx.make_close_task();
 
-                let task = Box::new(move || {
-                    let callback = arc.unwrap();
-                    (callback)();
-                });
+                if let Some(callback) = arc {
+                    let task = Box::new(move || {
+                        (callback)();
+                    });
 
-                action = Action::TaskAndStop(task);
+                    action = Action::TaskAndStop(task);
+                } else {
+                    action = Action::Stop;
+                }
+
 
             },
             Ok(n) => {
                 let chunk = self.temp[..n].to_vec();
                 let arc = self.ctx.make_chunk_task(chunk);
 
-                let task = Box::new(move || {
-                    let callback = arc.unwrap();
-                    (callback)();
-                });
+                if let Some(callback) = arc {
 
-                action = Action::Task(task);
+                    let task = Box::new(move || {
+                        (callback)();
+                    });
+
+                    action = Action::Task(task)
+                } else {
+                    action = Action::Continue;
+                }
+
             },
             Err(Errno::EAGAIN) => action = Action::Continue,
             Err(_) => action = Action::Stop,

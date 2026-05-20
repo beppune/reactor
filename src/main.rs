@@ -7,7 +7,7 @@ mod signals;
 mod framer;
 mod pipes;
 
-use std::{sync::{Arc, Mutex, atomic::Ordering}, time::Duration};
+use std::{io::{Write, stdin, stdout}, sync::{Arc, Mutex, atomic::Ordering}, time::Duration};
 
 use nix::sys::signal::Signal::SIGUSR1;
 use reactor::Reactor;
@@ -22,7 +22,7 @@ fn main() {
 
         ctx.on_chunk(|data, _ctx|{
             let s = String::from_utf8(data).unwrap();
-            println!("{s}");
+            print!("{s}");
         });
 
         ctx.on_close(|_ctx| println!("closing pipe"));

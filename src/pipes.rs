@@ -2,7 +2,7 @@ use std::{collections::VecDeque, io, os::fd::BorrowedFd, sync::{Arc, Mutex, atom
 
 use nix::{errno::Errno, fcntl::OFlag, libc::{CBAUD, O_NONBLOCK, O_RDONLY}, sys::stat::Mode };
 
-use crate::{framer::Framer, handler::{Action, Handler, Interest}, reactor::Reactor};
+use crate::{framer::{Buffer, Framer}, handler::{Action, Handler, Interest}, reactor::Reactor};
 
 #[derive(Clone)]
 pub struct PipeContext {
@@ -58,6 +58,7 @@ impl PipeContext {
 }
 
 struct PipeReadHandler {
+    pub buffer: Buffer,
     pub temp: Vec<u8>,
     pub ctx: PipeContext,
 }
@@ -124,6 +125,7 @@ impl PipeOperations for Reactor {
         let temp:Vec<u8> = vec![0; max];
 
         let h = Box::new(PipeReadHandler {
+            buffer: Buffer::new(512),
             temp,
             ctx,
         });

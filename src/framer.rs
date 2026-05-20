@@ -3,7 +3,7 @@ use std::{
     io::{self, ErrorKind},
 };
 
-struct Buffer {
+pub struct Buffer {
     inner: VecDeque<u8>,
 }
 

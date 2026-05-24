@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, io, os::fd::BorrowedFd, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}, vec};
 
-use nix::{errno::Errno, fcntl::OFlag, libc::{CBAUD, O_NONBLOCK, O_RDONLY}, sys::stat::Mode };
+use nix::{errno::Errno, fcntl::OFlag, libc::{CBAUD, O_NONBLOCK, O_RDONLY, SOMAXCONN}, sys::stat::Mode };
 
 use crate::{framer::{Buffer, Framer}, handler::{Action, Handler, Interest}, reactor::Reactor};
 
@@ -68,6 +68,11 @@ impl Handler for PipeReadHandler {
         let action: Action;
         match nix::unistd::read(fd, &mut self.temp) {
             Ok(0) => {
+
+                while self.buffer.next_frame().is_some() {
+                    //do nothing
+                }
+
                 let arc = self.ctx.make_close_task();
 
                 if let Some(callback) = arc {
@@ -80,10 +85,18 @@ impl Handler for PipeReadHandler {
                     action = Action::Stop;
                 }
 
-
             },
             Ok(n) => {
-                let chunk = self.temp[..n].to_vec();
+                if let Err(_e) = self.buffer.push(&self.temp[..n]) {
+                    action = Action::Stop;
+                    return action;
+                }
+                let frame = self.buffer.next_frame();
+                if frame.is_none() {
+                    action = Action::Continue;
+                    return action;
+                }
+                let chunk = frame.unwrap();
                 let arc = self.ctx.make_chunk_task(chunk);
 
                 if let Some(callback) = arc {
@@ -99,7 +112,13 @@ impl Handler for PipeReadHandler {
 
             },
             Err(Errno::EAGAIN) => action = Action::Continue,
-            Err(_) => action = Action::Stop,
+            Err(e) => {
+                println!("pipe read: {}", e);
+                while self.buffer.next_frame().is_some() {
+                    // do nothing
+                }
+                action = Action::Stop;
+            }
         }
 
         action

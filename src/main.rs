@@ -21,8 +21,12 @@ fn main() {
     let _res = rct.read_named_pipe("thepipe", |ctx| {
 
         ctx.on_chunk(|data, _ctx|{
-            let s = String::from_utf8(data).unwrap();
-            print!("{s}");
+            println!("on_chunk");
+            let s = String::from_utf8(data);
+            match s {
+                Ok(t) => println!("{t}"),
+                Err(e) => println!("{:?}", e),
+            }
         });
 
         ctx.on_close(|_ctx| println!("closing pipe"));

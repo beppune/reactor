@@ -22,19 +22,15 @@ pub trait Framer {
 impl Framer for Buffer {
 
     fn next_frame(&mut self) -> Option<Vec<u8>> {
-        // Servono almeno 2 byte per contenere `\r\n`.
-        if self.inner.len() < 2 {
+        if self.inner.is_empty() {
             return None;
         }
 
-        // Scansione lineare alla ricerca di `\r\n`.
-        // Il range è `0..len()-1` perché confrontiamo sempre `buffer[i]` con `buffer[i+1]`.
-        for i in 0..self.inner.len() - 1 {
-            if self.inner[i] == b'\r' && self.inner[i + 1] == b'\n' {
-                // Payload = [0..i), delimitatore = 2 byte.
-                // Non consumiamo qui: restituiamo anche quanti byte consumare dal buffer.
+        for i in 0..self.inner.len() {
+            if self.inner[i] == b'\n' {
+
                 let frame: Vec<u8> = self.inner.iter().take(i).copied().collect();
-                let to_consume = i + 2; // payload + "\r\n"
+                let to_consume = i + 1; // payload + "\n"
                 self.inner.drain(0..to_consume);
                 return Some(frame);
             }
@@ -104,7 +100,7 @@ mod test {
     fn single_frame() {
         let mut f = new_framer(20);
 
-        f.push(b"hello\r\n").unwrap();
+        f.push(b"hello\n").unwrap();
 
         let frame = f.next_frame().unwrap();
         assert_eq!(frame, b"hello");
@@ -116,7 +112,7 @@ mod test {
     fn multiple_frames() {
         let mut f = new_framer(30);
 
-        f.push(b"foo\r\nbar\r\n").unwrap();
+        f.push(b"foo\nbar\n").unwrap();
 
         assert_eq!(f.next_frame().unwrap(), b"foo");
         assert_eq!(f.next_frame().unwrap(), b"bar");
@@ -135,19 +131,7 @@ mod test {
         f.push(b"hel").unwrap();
         assert!(f.next_frame().is_none());
 
-        f.push(b"lo\r\n").unwrap();
-
-        assert_eq!(f.next_frame().unwrap(), b"hello");
-    }
-
-    #[test]
-    fn delimiter_split_across_pushes() {
-        let mut f = new_framer(20);
-
-        f.push(b"hello\r").unwrap();
-        assert!(f.next_frame().is_none());
-
-        f.push(b"\n").unwrap();
+        f.push(b"lo\n").unwrap();
 
         assert_eq!(f.next_frame().unwrap(), b"hello");
     }
@@ -160,7 +144,7 @@ mod test {
     fn empty_frame() {
         let mut f = new_framer(10);
 
-        f.push(b"\r\n").unwrap();
+        f.push(b"\n").unwrap();
 
         let frame = f.next_frame().unwrap();
         assert!(frame.is_empty());
@@ -170,7 +154,7 @@ mod test {
     fn consecutive_delimiters() {
         let mut f = new_framer(20);
 
-        f.push(b"a\r\n\r\nb\r\n").unwrap();
+        f.push(b"a\n\nb\n").unwrap();
 
         assert_eq!(f.next_frame().unwrap(), b"a");
         assert_eq!(f.next_frame().unwrap(), b"");
@@ -179,14 +163,6 @@ mod test {
         assert!(f.next_frame().is_none());
     }
 
-    #[test]
-    fn dangling_cr() {
-        let mut f = new_framer(20);
-
-        f.push(b"hello\rworld").unwrap();
-
-        assert!(f.next_frame().is_none());
-    }
 
     // =========================
     // BUFFER BEHAVIOR
@@ -216,7 +192,7 @@ mod test {
     fn frame_exactly_fits_capacity() {
         let mut f = new_framer(7);
 
-        f.push(b"hello\r\n").unwrap();
+        f.push(b"hello\n").unwrap();
 
         assert_eq!(f.next_frame().unwrap(), b"hello");
         assert!(f.next_frame().is_none());
@@ -227,7 +203,7 @@ mod test {
         let mut f = new_framer(10);
 
         f.push(b"hello12345").unwrap();
-        f.push(b"67890\r\n").unwrap();
+        f.push(b"67890\n").unwrap();
 
         let _ = f.next_frame();
     }

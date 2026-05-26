@@ -1,6 +1,6 @@
-use std::{collections::VecDeque, io, os::fd::BorrowedFd, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}, vec};
+use std::{collections::VecDeque, io, os::fd::BorrowedFd, sync::{Arc, Mutex}, vec};
 
-use nix::{errno::Errno, fcntl::OFlag, libc::{CBAUD, O_NONBLOCK, O_RDONLY, SOMAXCONN, printf}, sys::stat::Mode };
+use nix::{errno::Errno, fcntl::OFlag, libc::{O_NONBLOCK, O_RDONLY, O_WRONLY}, sys::stat::Mode };
 
 use crate::{framer::{Buffer, Framer}, handler::{Action, Handler, Interest}, reactor::{self, Reactor, ReactorHandle}};
 
@@ -113,7 +113,7 @@ impl Handler for PipeReadHandler {
                 }
 
                 let _ = self.ctx.reactor.sender.send(Box::new(|_r: &mut Reactor|{
-                   println!("I'm the reactor");
+                    println!("I'm the reactor");
                 }));
 
             },
@@ -131,8 +131,58 @@ impl Handler for PipeReadHandler {
     }
 }
 
+pub struct PipeWriteHadler {
+    pub temp: Vec<u8>,
+    pub ctx: PipeContext,
+}
+
+impl Handler for PipeWriteHadler {
+    fn handle(&mut self, fd: BorrowedFd) -> crate::handler::Action {
+        let action: Action;
+        match nix::unistd::write(fd, &self.temp[..self.temp.len()]) {
+            Ok(0) => {
+
+                let arc = self.ctx.make_close_task();
+                if let Some(callback) = arc { let task = Box::new(move || {
+                    (callback)();
+                });
+
+                    action = Action::TaskAndStop(task);
+                } else {
+                    action = Action::Stop;
+                }
+
+            },
+            Ok(_n) => {
+                let chunk = self.temp.clone();
+                let arc = self.ctx.make_chunk_task(chunk);
+
+                if let Some(callback) = arc {
+
+                    let task = Box::new(move || {
+                        (callback)();
+                    });
+
+                    action = Action::Task(task)
+                } else {
+                    action = Action::Continue;
+                }
+
+            },
+            Err(Errno::EAGAIN) => action = Action::Continue,
+            Err(e) => {
+                println!("pipe read: {}", e);
+                action = Action::Stop;
+            }
+        }
+
+        action
+    }
+}
+
 pub trait PipeOperations {
     fn read_named_pipe(&mut self, path: &str, cb: impl FnOnce(&mut PipeContext)) -> io::Result<()>;
+    fn write_named_pipe(&mut self, buffer:Vec<u8>, path: &str, cb: impl FnOnce(&mut PipeContext)) -> io::Result<()>;
 }
 
 impl PipeOperations for Reactor {
@@ -163,4 +213,29 @@ impl PipeOperations for Reactor {
 
         Ok(())
     }
+
+    fn write_named_pipe(&mut self, buffer:Vec<u8>, path: &str, config: impl FnOnce(&mut PipeContext)) -> io::Result<()> {
+        let oflags = OFlag::from_bits(O_NONBLOCK| O_WRONLY).unwrap();
+        let mode = Mode::empty();
+        let ofd = nix::fcntl::open(path, oflags, mode)?;
+
+        let reactor = ReactorHandle {
+            sender: self.command_sender.clone(),
+        };
+
+        let mut ctx = PipeContext::new(512, reactor);
+
+        (config)(&mut ctx);
+
+        let h = Box::new(PipeWriteHadler{
+            temp: buffer,
+            ctx,
+        });
+
+        self.register(ofd, h, Interest::Write);
+
+        Ok(())
+    }
+
+
 }

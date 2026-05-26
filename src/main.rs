@@ -18,20 +18,26 @@ fn main() {
 
     let mut rct = Reactor::new();
 
-    let _res = rct.read_named_pipe("thepipe", |ctx| {
+    let _res = rct.write_named_pipe("thepipe", |ctx| {
 
-        ctx.on_chunk(|data, _ctx|{
-            println!("on_chunk");
-            let s = String::from_utf8(data);
-            match s {
-                Ok(t) => println!("{t}"),
-                Err(e) => println!("{:?}", e),
-            }
+        ctx.on_chunk(|data, _ctx| {
         });
-
-        ctx.on_close(|_ctx| println!("closing pipe"));
-        
     });
+
+    // let _res = rct.read_named_pipe("thepipe", |ctx| {
+    //
+    //     ctx.on_chunk(|data, _ctx|{
+    //         println!("on_chunk");
+    //         let s = String::from_utf8(data);
+    //         match s {
+    //             Ok(t) => println!("{t}"),
+    //             Err(e) => println!("{:?}", e),
+    //         }
+    //     });
+    //
+    //     ctx.on_close(|_ctx| println!("closing pipe"));
+    //
+    // });
 
     // let _ = rct.read_file("Cargo.toml", |ctx|{
     //     // ctx.on_chunk(|data, ctx| ctx.push_bytes(&data) );

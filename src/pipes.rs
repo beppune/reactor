@@ -155,6 +155,7 @@ impl Handler for PipeWriteHadler {
             },
             Ok(_n) => {
                 let chunk = self.temp.clone();
+                self.temp.clear();
                 let arc = self.ctx.make_chunk_task(chunk);
 
                 if let Some(callback) = arc {
@@ -182,7 +183,7 @@ impl Handler for PipeWriteHadler {
 
 pub trait PipeOperations {
     fn read_named_pipe(&mut self, path: &str, cb: impl FnOnce(&mut PipeContext)) -> io::Result<()>;
-    fn write_named_pipe(&mut self, buffer:Vec<u8>, path: &str, cb: impl FnOnce(&mut PipeContext)) -> io::Result<()>;
+    fn write_named_pipe(&mut self, path: &str, buffer:Vec<u8>, cb: impl FnOnce(&mut PipeContext)) -> io::Result<()>;
 }
 
 impl PipeOperations for Reactor {
@@ -214,7 +215,7 @@ impl PipeOperations for Reactor {
         Ok(())
     }
 
-    fn write_named_pipe(&mut self, buffer:Vec<u8>, path: &str, config: impl FnOnce(&mut PipeContext)) -> io::Result<()> {
+    fn write_named_pipe(&mut self, path: &str, buffer:Vec<u8>, config: impl FnOnce(&mut PipeContext)) -> io::Result<()> {
         let oflags = OFlag::from_bits(O_NONBLOCK| O_WRONLY).unwrap();
         let mode = Mode::empty();
         let ofd = nix::fcntl::open(path, oflags, mode)?;

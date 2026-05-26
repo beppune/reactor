@@ -1,7 +1,8 @@
+use core::task;
 use std::collections::HashMap;
 
 use std::os::fd::{AsFd, AsRawFd, OwnedFd, RawFd};
-use std::sync::mpsc;
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
 use nix::libc::{POLLIN, POLLOUT};
@@ -9,15 +10,26 @@ use nix::poll::{PollFd, PollFlags, PollTimeout};
 
 use crate::handler::{Handler, Action, Interest};
 
+#[derive(Clone)]
+pub struct ReactorHandle {
+    pub sender: Sender<Box<dyn FnOnce(&mut Reactor) + Send>>,
+}
+
 pub struct Reactor {
     fds: HashMap<RawFd, (OwnedFd, Box<dyn Handler>, Interest)>,
+    pub command_sender: Sender<Box<dyn FnOnce(&mut Reactor) + Send>>,
+    command_receiver: Receiver<Box<dyn FnOnce(&mut Reactor) + Send>>,
+    
 }
 
 impl Reactor {
 
     pub fn new() -> Self {
+        let (t, r) = mpsc::channel();
         Self {
             fds: HashMap::new(),
+            command_sender: t,
+            command_receiver: r,
         }
     }
 
@@ -38,6 +50,11 @@ impl Reactor {
         });
 
         loop {
+
+            while let Ok(task) = self.command_receiver.try_recv() {
+                (task)(self);
+            }
+            
             if self.fds.is_empty() {
                 break;
             }

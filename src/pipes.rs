@@ -1,22 +1,24 @@
 use std::{collections::VecDeque, io, os::fd::BorrowedFd, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}, vec};
 
-use nix::{errno::Errno, fcntl::OFlag, libc::{CBAUD, O_NONBLOCK, O_RDONLY, SOMAXCONN}, sys::stat::Mode };
+use nix::{errno::Errno, fcntl::OFlag, libc::{CBAUD, O_NONBLOCK, O_RDONLY, SOMAXCONN, printf}, sys::stat::Mode };
 
-use crate::{framer::{Buffer, Framer}, handler::{Action, Handler, Interest}, reactor::Reactor};
+use crate::{framer::{Buffer, Framer}, handler::{Action, Handler, Interest}, reactor::{self, Reactor, ReactorHandle}};
 
 #[derive(Clone)]
 pub struct PipeContext {
     pub buffer: Arc<Mutex<VecDeque<u8>>>,
     pub on_chunk: Arc<Mutex<Option<Box<dyn FnMut(Vec<u8>, &PipeContext) + Send>>>>,
     pub on_close: Arc<Mutex<Option<Box<dyn FnOnce(&PipeContext) + Send>>>>,
+    pub reactor: ReactorHandle,
 }
 
 impl PipeContext {
-    fn new(buf_size: usize) -> Self {
+    fn new(buf_size: usize, reactor: ReactorHandle) -> Self {
         Self {
             buffer: Arc::new(Mutex::new(VecDeque::with_capacity(buf_size))),
             on_chunk: Arc::new(Mutex::new(None)),
             on_close: Arc::new(Mutex::new(None)),
+            reactor,
         }
     }
 
@@ -110,6 +112,10 @@ impl Handler for PipeReadHandler {
                     action = Action::Continue;
                 }
 
+                let _ = self.ctx.reactor.sender.send(Box::new(|_r: &mut Reactor|{
+                   println!("I'm the reactor");
+                }));
+
             },
             Err(Errno::EAGAIN) => action = Action::Continue,
             Err(e) => {
@@ -135,7 +141,11 @@ impl PipeOperations for Reactor {
         let mode = Mode::empty();
         let ofd = nix::fcntl::open(path, oflags, mode)?;
 
-        let mut ctx = PipeContext::new(512);
+        let reactor = ReactorHandle {
+            sender: self.command_sender.clone(),
+        };
+
+        let mut ctx = PipeContext::new(512, reactor);
 
         (config)(&mut ctx);
 

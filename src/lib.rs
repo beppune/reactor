@@ -7,6 +7,7 @@ mod signals;
 mod framer;
 mod pipes;
 mod buffer;
+mod fd;
 
 #[cfg(test)]
 mod test {

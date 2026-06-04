@@ -1,36 +1,41 @@
-use std::collections::VecDeque;
 
-pub enum PushResult {
-    Ok(usize),
-    BufferFull,
-}
 pub trait Buffer {
+
+    fn view(&self) -> &[u8];
+
+    fn consume(&mut self, n: usize);
+
+    fn append(&mut self, bytes: &[u8]);
+
     fn len(&self) -> usize;
-    fn capacity(&self) -> usize;
-    fn available(&self) -> usize {
-        self.capacity() - self.len()
+
+    fn available(&self) -> usize;
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
-    fn push(&mut self, bytes: &[u8]) -> PushResult;
 }
 
-impl Buffer for VecDeque<u8> {
-    fn push(&mut self, bytes: &[u8]) -> PushResult {
-        let avail = self.capacity() - self.len();
-
-        if avail < bytes.len() {
-            return PushResult::BufferFull;
-        }
-
-        self.extend(bytes);
-
-        PushResult::Ok(bytes.len())
+impl Buffer for Vec<u8> {
+    fn view(&self) -> &[u8] {
+        self
     }
 
-    fn capacity(&self) -> usize {
-        self.capacity()
+    fn consume(&mut self, n: usize) {
+        assert!(n <= self.len(), "consume beyond buffer");
+        let n = n.min(self.len());
+        self.drain(..n);
+    }
+
+    fn append(&mut self, bytes: &[u8]) {
+        self.extend(bytes);
     }
 
     fn len(&self) -> usize {
         self.len()
+    }
+
+    fn available(&self) -> usize {
+        self.capacity() - self.len()
     }
 }
